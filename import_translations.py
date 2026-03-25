@@ -2,8 +2,8 @@
 """Import translations from the TSV file back into the JSON override files.
 
 Usage:
-    python3 import_translations.py                  # import from untranslated.tsv
-    python3 import_translations.py my_file.tsv      # import from a specific file
+    python import_translations.py                  # import from untranslated.tsv
+    python import_translations.py my_file.tsv      # import from a specific file
 
 Only rows with a non-empty 'esperanto' column are applied.
 Runs validation after importing.
@@ -15,15 +15,31 @@ import os
 import re
 import sys
 
-ENG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eng")
-ORIGINAL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extracted", "localization", "eng")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENG_DIR = os.path.join(BASE_DIR, "eng")
+ORIGINAL_DIR = os.path.join(BASE_DIR, "extracted", "localization", "eng")
+HASHES_PATH = os.path.join(BASE_DIR, "original_hashes.json")
+
+
+def load_originals():
+    """Load original English values from extracted/ or reconstruct from eng/ + hashes."""
+    originals = {}
+    if os.path.isdir(ORIGINAL_DIR):
+        for f in os.listdir(ORIGINAL_DIR):
+            if f.endswith(".json"):
+                with open(os.path.join(ORIGINAL_DIR, f), encoding="utf-8") as fh:
+                    originals[f] = json.load(fh)
+    return originals
+
 
 def main():
-    tsv_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "untranslated.tsv")
+    tsv_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(BASE_DIR, "untranslated.tsv")
 
     if not os.path.exists(tsv_path):
         print(f"Error: {tsv_path} not found. Run export_untranslated.py first.")
         return
+
+    originals = load_originals()
 
     # Read TSV
     translations = {}
@@ -51,15 +67,13 @@ def main():
 
     for f, entries in sorted(translations.items()):
         override_path = os.path.join(ENG_DIR, f)
-        orig_path = os.path.join(ORIGINAL_DIR, f)
         if not os.path.exists(override_path):
             warnings.append(f"File not found: {f}")
             continue
 
         with open(override_path, encoding="utf-8") as fh:
             override = json.load(fh)
-        with open(orig_path, encoding="utf-8") as fh:
-            original = json.load(fh)
+        original = originals.get(f, {})
 
         for k, eo in entries.items():
             if k not in override:
@@ -73,7 +87,8 @@ def main():
 
             # Validate: check placeholders match original
             if k.endswith(".description"):
-                orig_placeholders = sorted(placeholder_re.findall(original.get(k, "")))
+                orig_val = original.get(k, override.get(k, ""))
+                orig_placeholders = sorted(placeholder_re.findall(orig_val))
                 new_placeholders = sorted(placeholder_re.findall(eo))
                 if orig_placeholders != new_placeholders:
                     warnings.append(f"{f} -> {k}: placeholder mismatch\n"
@@ -94,9 +109,7 @@ def main():
         for w in warnings:
             print(f"  {w}")
 
-    # Sync to override folder
-    print(f"\nDon't forget to copy eng/ to your localization_override folder!")
-    print(f"Run: python3 install.py")
+    print(f"\nTo install into the game, run: python install.py")
 
 if __name__ == "__main__":
     main()

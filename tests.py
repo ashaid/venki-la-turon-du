@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for the Esperanto translation override files."""
 
+import hashlib
 import json
 import os
 import re
@@ -10,6 +11,7 @@ from collections import defaultdict
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENG_DIR = os.path.join(BASE_DIR, "eng")
 ORIGINAL_DIR = os.path.join(BASE_DIR, "extracted", "localization", "eng")
+HASHES_PATH = os.path.join(BASE_DIR, "original_hashes.json")
 
 failures = []
 
@@ -24,8 +26,33 @@ def load_json(path):
         return json.load(fh)
 
 
+def hash_value(v):
+    return hashlib.sha256(v.encode("utf-8")).hexdigest()[:12]
+
+
 def has_originals():
     return os.path.isdir(ORIGINAL_DIR)
+
+
+def has_hashes():
+    return os.path.exists(HASHES_PATH)
+
+
+def load_hashes():
+    if has_hashes():
+        return load_json(HASHES_PATH)
+    return {}
+
+
+def is_translated(f, k, v, originals, hashes):
+    """Check if a string has been translated (differs from original)."""
+    if not isinstance(v, str):
+        return False
+    if originals and f in originals:
+        return v != originals[f].get(k)
+    if hashes and f in hashes:
+        return hash_value(v) != hashes[f].get(k)
+    return False
 
 
 def test_all_json_valid():
@@ -103,6 +130,7 @@ def test_valid_color_tags():
 def test_no_empty_values():
     """No value should be empty unless the original is also empty."""
     print("test_no_empty_values")
+    hashes = load_hashes()
     for f in sorted(os.listdir(ENG_DIR)):
         if not f.endswith(".json"):
             continue
@@ -115,30 +143,38 @@ def test_no_empty_values():
         for k, v in data.items():
             if v == "":
                 if original and original.get(k, "") == "":
-                    continue  # original is also empty, fine
+                    continue
                 elif original:
                     fail(f"{f} -> {k}: empty but original is not")
-                # without originals, can't tell — skip
+                elif hashes and f in hashes:
+                    orig_hash = hashes[f].get(k)
+                    empty_hash = hash_value("")
+                    if orig_hash != empty_hash:
+                        fail(f"{f} -> {k}: empty but original is not")
 
-
-# --- Tests that require extracted/ (local only, skipped in CI) ---
 
 def test_keys_match_original():
     """Override files must have exactly the same keys as the originals."""
     print("test_keys_match_original")
-    if not has_originals():
-        print("  SKIP: extracted/ not present")
+    hashes = load_hashes()
+    if not has_originals() and not hashes:
+        print("  SKIP: no reference data")
         return
     for f in sorted(os.listdir(ENG_DIR)):
         if not f.endswith(".json"):
             continue
-        orig_path = os.path.join(ORIGINAL_DIR, f)
-        if not os.path.exists(orig_path):
-            continue
         override = load_json(os.path.join(ENG_DIR, f))
-        original = load_json(orig_path)
-        missing = set(original.keys()) - set(override.keys())
-        extra = set(override.keys()) - set(original.keys())
+        if has_originals():
+            orig_path = os.path.join(ORIGINAL_DIR, f)
+            if not os.path.exists(orig_path):
+                continue
+            original_keys = set(load_json(orig_path).keys())
+        elif f in hashes:
+            original_keys = set(hashes[f].keys())
+        else:
+            continue
+        missing = original_keys - set(override.keys())
+        extra = set(override.keys()) - original_keys
         if missing:
             fail(f"{f}: missing {len(missing)} keys: {list(missing)[:3]}...")
         if extra:
@@ -149,7 +185,7 @@ def test_placeholders_match_original():
     """Translated descriptions must have the same {placeholders} as the English original."""
     print("test_placeholders_match_original")
     if not has_originals():
-        print("  SKIP: extracted/ not present")
+        print("  SKIP: extracted/ not present (need full text to compare placeholders)")
         return
     placeholder_re = re.compile(r"\{[^}]+\}")
     for f in sorted(os.listdir(ENG_DIR)):
@@ -172,14 +208,39 @@ def test_placeholders_match_original():
 def test_duplicate_names_consistent():
     """If one variant of a shared name is translated, all must be."""
     print("test_duplicate_names_consistent")
-    if not has_originals():
-        print("  SKIP: extracted/ not present")
+    hashes_data = load_hashes()
+    if not has_originals() and not hashes_data:
+        print("  SKIP: no reference data")
         return
     for f in sorted(os.listdir(ENG_DIR)):
         if not f.endswith(".json"):
             continue
         override = load_json(os.path.join(ENG_DIR, f))
-        original = load_json(os.path.join(ORIGINAL_DIR, f))
+        if has_originals():
+            orig_path = os.path.join(ORIGINAL_DIR, f)
+            if not os.path.exists(orig_path):
+                continue
+            original = load_json(orig_path)
+        elif f in hashes_data:
+            # Without full text we can't group by English name
+            # but we can detect if same-hash keys are partially translated
+            file_hashes = hashes_data[f]
+            hash_groups = defaultdict(list)
+            for k, h in file_hashes.items():
+                if k.endswith(".title") or k.endswith(".name"):
+                    hash_groups[h].append(k)
+            for h, keys in hash_groups.items():
+                if len(keys) < 2:
+                    continue
+                translated = [k for k in keys if is_translated(f, k, override.get(k, ""), {}, hashes_data)]
+                untranslated = [k for k in keys if not is_translated(f, k, override.get(k, ""), {}, hashes_data)]
+                if translated and untranslated:
+                    fail(f"{f}: shared name partially translated - "
+                         f"done: {translated}, missing: {untranslated}")
+            continue
+        else:
+            continue
+
         groups = defaultdict(list)
         for k, v in original.items():
             if k.endswith(".title") or k.endswith(".name"):
@@ -195,14 +256,11 @@ def test_duplicate_names_consistent():
 
 
 if __name__ == "__main__":
-    # These always run (including CI)
     test_all_json_valid()
     test_no_sts1_markup()
     test_valid_placeholders()
     test_valid_color_tags()
     test_no_empty_values()
-
-    # These need extracted/ (local only)
     test_keys_match_original()
     test_placeholders_match_original()
     test_duplicate_names_consistent()

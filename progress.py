@@ -1,19 +1,41 @@
 #!/usr/bin/env python3
 """Show translation progress per file and overall."""
 
+import hashlib
 import json
 import os
 
-ENG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eng")
-ORIGINAL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extracted", "localization", "eng")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENG_DIR = os.path.join(BASE_DIR, "eng")
+ORIGINAL_DIR = os.path.join(BASE_DIR, "extracted", "localization", "eng")
+HASHES_PATH = os.path.join(BASE_DIR, "original_hashes.json")
+
+
+def hash_value(v):
+    return hashlib.sha256(v.encode("utf-8")).hexdigest()[:12]
+
 
 def bar(pct, width=20):
     filled = int(pct / 100 * width)
-    return "█" * filled + "░" * (width - filled)
+    return "\u2588" * filled + "\u2591" * (width - filled)
+
 
 def main():
-    if not os.path.isdir(ORIGINAL_DIR):
-        print("Error: extracted/ not found. Run GDRE extraction first.")
+    # Load reference data
+    originals = {}
+    hashes = {}
+
+    if os.path.isdir(ORIGINAL_DIR):
+        for f in os.listdir(ORIGINAL_DIR):
+            if f.endswith(".json"):
+                with open(os.path.join(ORIGINAL_DIR, f), encoding="utf-8") as fh:
+                    originals[f] = json.load(fh)
+    elif os.path.exists(HASHES_PATH):
+        with open(HASHES_PATH, encoding="utf-8") as fh:
+            hashes = json.load(fh)
+    else:
+        print("Error: no reference data found.")
+        print("Need either extracted/ (from GDRE) or original_hashes.json")
         return
 
     rows = []
@@ -25,28 +47,33 @@ def main():
             continue
         with open(os.path.join(ENG_DIR, f), encoding="utf-8") as fh:
             override = json.load(fh)
-        orig_path = os.path.join(ORIGINAL_DIR, f)
-        if not os.path.exists(orig_path):
-            continue
-        with open(orig_path, encoding="utf-8") as fh:
-            original = json.load(fh)
 
-        done = sum(1 for k in override if override[k] != original.get(k))
         total = len(override)
+        done = 0
+        for k, v in override.items():
+            if not isinstance(v, str):
+                continue
+            if originals and f in originals:
+                if v != originals[f].get(k):
+                    done += 1
+            elif hashes and f in hashes:
+                if hash_value(v) != hashes[f].get(k):
+                    done += 1
+
         total_done += done
         total_all += total
         rows.append((f, done, total))
 
-    print(f"\n  Venki la Turon du — Translation Progress\n")
+    print(f"\n  Venki la Turon du \u2014 Translation Progress\n")
     print(f"  {'File':<30} {'Done':>5} / {'Total':<5}  {'%':>5}  Progress")
-    print(f"  {'─'*30} {'─'*5}   {'─'*5}  {'─'*5}  {'─'*20}")
+    print(f"  {'\u2500'*30} {'\u2500'*5}   {'\u2500'*5}  {'\u2500'*5}  {'\u2500'*20}")
 
     for f, done, total in rows:
         pct = done * 100 // total if total else 0
         if done > 0:
             print(f"  {f:<30} {done:>5} / {total:<5}  {pct:>4}%  {bar(pct)}")
 
-    print(f"  {'─'*30} {'─'*5}   {'─'*5}  {'─'*5}  {'─'*20}")
+    print(f"  {'\u2500'*30} {'\u2500'*5}   {'\u2500'*5}  {'\u2500'*5}  {'\u2500'*20}")
 
     untouched = [(f, t) for f, d, t in rows if d == 0]
     if untouched:
