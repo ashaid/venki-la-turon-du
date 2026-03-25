@@ -1,0 +1,34 @@
+name: Auto-format
+
+on:
+  push:
+    branches: [main]
+    paths: ["eng/**"]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Format JSON files
+        run: python3 lint.py --fix
+      - name: Check for changes
+        id: diff
+        run: |
+          git diff --quiet || echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Commit formatting
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add eng/
+          git commit -m "style: auto-format JSON files"
+          git push
