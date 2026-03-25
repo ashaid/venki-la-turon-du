@@ -5,15 +5,28 @@ import json
 import os
 import re
 import sys
+from collections import defaultdict
 
-ENG_DIR = os.path.join(os.path.dirname(__file__), "eng")
-ORIGINAL_DIR = os.path.join(os.path.dirname(__file__), "extracted", "localization", "eng")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENG_DIR = os.path.join(BASE_DIR, "eng")
+ORIGINAL_DIR = os.path.join(BASE_DIR, "extracted", "localization", "eng")
 
 failures = []
+
 
 def fail(msg):
     failures.append(msg)
     print(f"  FAIL: {msg}")
+
+
+def load_json(path):
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def has_originals():
+    return os.path.isdir(ORIGINAL_DIR)
+
 
 def test_all_json_valid():
     """Every file in eng/ must be valid JSON."""
@@ -21,18 +34,100 @@ def test_all_json_valid():
     for f in sorted(os.listdir(ENG_DIR)):
         if not f.endswith(".json"):
             continue
-        path = os.path.join(ENG_DIR, f)
         try:
-            with open(path, encoding="utf-8") as fh:
-                json.load(fh)
+            load_json(os.path.join(ENG_DIR, f))
         except json.JSONDecodeError as e:
             fail(f"{f}: invalid JSON - {e}")
+
+
+def test_no_sts1_markup():
+    """No STS1 markup (!D!, !M!, !B!, NL, [G], [R], [B]) anywhere."""
+    print("test_no_sts1_markup")
+    sts1_pattern = re.compile(r"!\w+!|\bNL\b|\[G\]|\[R\]|\[B\]")
+    for f in sorted(os.listdir(ENG_DIR)):
+        if not f.endswith(".json"):
+            continue
+        data = load_json(os.path.join(ENG_DIR, f))
+        for k, v in data.items():
+            if not isinstance(v, str):
+                continue
+            matches = sts1_pattern.findall(v)
+            if matches:
+                fail(f"{f} -> {k}: STS1 markup {matches}")
+
+
+def test_valid_placeholders():
+    """All {placeholders} must have matched braces."""
+    print("test_valid_placeholders")
+    for f in sorted(os.listdir(ENG_DIR)):
+        if not f.endswith(".json"):
+            continue
+        data = load_json(os.path.join(ENG_DIR, f))
+        for k, v in data.items():
+            if not isinstance(v, str):
+                continue
+            depth = 0
+            for ch in v:
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth < 0:
+                        fail(f"{f} -> {k}: unmatched closing brace")
+                        break
+            else:
+                if depth != 0:
+                    fail(f"{f} -> {k}: unmatched opening brace")
+
+
+def test_valid_color_tags():
+    """Closing [/tag] tags must have a matching opening [tag]."""
+    print("test_valid_color_tags")
+    # Matches [tag], [tag=param], [tag param]
+    open_re = re.compile(r"\[(\w+)[\s=\]]")
+    close_re = re.compile(r"\[/(\w+)\]")
+    for f in sorted(os.listdir(ENG_DIR)):
+        if not f.endswith(".json"):
+            continue
+        data = load_json(os.path.join(ENG_DIR, f))
+        for k, v in data.items():
+            if not isinstance(v, str):
+                continue
+            opens = open_re.findall(v)
+            closes = close_re.findall(v)
+            for tag in closes:
+                if tag not in opens:
+                    fail(f"{f} -> {k}: [/{tag}] without [{tag}]")
+
+
+def test_no_empty_values():
+    """No value should be empty unless the original is also empty."""
+    print("test_no_empty_values")
+    for f in sorted(os.listdir(ENG_DIR)):
+        if not f.endswith(".json"):
+            continue
+        data = load_json(os.path.join(ENG_DIR, f))
+        original = None
+        if has_originals():
+            orig_path = os.path.join(ORIGINAL_DIR, f)
+            if os.path.exists(orig_path):
+                original = load_json(orig_path)
+        for k, v in data.items():
+            if v == "":
+                if original and original.get(k, "") == "":
+                    continue  # original is also empty, fine
+                elif original:
+                    fail(f"{f} -> {k}: empty but original is not")
+                # without originals, can't tell — skip
+
+
+# --- Tests that require extracted/ (local only, skipped in CI) ---
 
 def test_keys_match_original():
     """Override files must have exactly the same keys as the originals."""
     print("test_keys_match_original")
-    if not os.path.isdir(ORIGINAL_DIR):
-        print("  SKIP: extracted/ not present (run GDRE extraction first)")
+    if not has_originals():
+        print("  SKIP: extracted/ not present")
         return
     for f in sorted(os.listdir(ENG_DIR)):
         if not f.endswith(".json"):
@@ -40,10 +135,8 @@ def test_keys_match_original():
         orig_path = os.path.join(ORIGINAL_DIR, f)
         if not os.path.exists(orig_path):
             continue
-        with open(os.path.join(ENG_DIR, f), encoding="utf-8") as fh:
-            override = json.load(fh)
-        with open(orig_path, encoding="utf-8") as fh:
-            original = json.load(fh)
+        override = load_json(os.path.join(ENG_DIR, f))
+        original = load_json(orig_path)
         missing = set(original.keys()) - set(override.keys())
         extra = set(override.keys()) - set(original.keys())
         if missing:
@@ -51,89 +144,42 @@ def test_keys_match_original():
         if extra:
             fail(f"{f}: extra {len(extra)} keys: {list(extra)[:3]}...")
 
-def test_no_sts1_markup():
-    """No STS1 markup (!D!, !M!, !B!, NL, [G], [R], [B]) in translated strings."""
-    print("test_no_sts1_markup")
-    if not os.path.isdir(ORIGINAL_DIR):
-        print("  SKIP: extracted/ not present")
-        return
-    sts1_pattern = re.compile(r"!\w+!|\bNL\b|\[G\]|\[R\]|\[B\]")
-    for f in sorted(os.listdir(ENG_DIR)):
-        if not f.endswith(".json"):
-            continue
-        with open(os.path.join(ENG_DIR, f), encoding="utf-8") as fh:
-            override = json.load(fh)
-        orig_path = os.path.join(ORIGINAL_DIR, f)
-        if not os.path.exists(orig_path):
-            continue
-        with open(orig_path, encoding="utf-8") as fh:
-            original = json.load(fh)
-        for k, v in override.items():
-            if not isinstance(v, str) or v == original.get(k):
-                continue  # only check translated strings
-            matches = sts1_pattern.findall(v)
-            if matches:
-                fail(f"{f} -> {k}: leftover STS1 markup {matches}")
 
-def test_placeholders_preserved():
+def test_placeholders_match_original():
     """Translated descriptions must have the same {placeholders} as the English original."""
-    print("test_placeholders_preserved")
-    if not os.path.isdir(ORIGINAL_DIR):
+    print("test_placeholders_match_original")
+    if not has_originals():
         print("  SKIP: extracted/ not present")
         return
     placeholder_re = re.compile(r"\{[^}]+\}")
     for f in sorted(os.listdir(ENG_DIR)):
         if not f.endswith(".json"):
             continue
-        with open(os.path.join(ENG_DIR, f), encoding="utf-8") as fh:
-            override = json.load(fh)
-        with open(os.path.join(ORIGINAL_DIR, f), encoding="utf-8") as fh:
-            original = json.load(fh)
+        override = load_json(os.path.join(ENG_DIR, f))
+        original = load_json(os.path.join(ORIGINAL_DIR, f))
         for k, v in override.items():
             if not isinstance(v, str) or v == original.get(k):
                 continue
             if not k.endswith(".description"):
                 continue
             orig_val = original.get(k, "")
-            override_placeholders = sorted(placeholder_re.findall(v))
-            original_placeholders = sorted(placeholder_re.findall(orig_val))
-            if override_placeholders != original_placeholders:
+            if sorted(placeholder_re.findall(v)) != sorted(placeholder_re.findall(orig_val)):
                 fail(f"{f} -> {k}: placeholders differ\n"
-                     f"    original:  {original_placeholders}\n"
-                     f"    override:  {override_placeholders}")
+                     f"    original:  {sorted(placeholder_re.findall(orig_val))}\n"
+                     f"    override:  {sorted(placeholder_re.findall(v))}")
 
-def test_no_empty_translations():
-    """Translated strings must not be empty (unless the original is also empty)."""
-    print("test_no_empty_translations")
-    if not os.path.isdir(ORIGINAL_DIR):
-        print("  SKIP: extracted/ not present")
-        return
-    for f in sorted(os.listdir(ENG_DIR)):
-        if not f.endswith(".json"):
-            continue
-        with open(os.path.join(ENG_DIR, f), encoding="utf-8") as fh:
-            override = json.load(fh)
-        with open(os.path.join(ORIGINAL_DIR, f), encoding="utf-8") as fh:
-            original = json.load(fh)
-        for k, v in override.items():
-            if v == "" and original.get(k, "") != "":
-                fail(f"{f} -> {k}: translated to empty string but original is not empty")
 
-def test_duplicate_names_all_translated():
+def test_duplicate_names_consistent():
     """If one variant of a shared name is translated, all must be."""
-    print("test_duplicate_names_all_translated")
-    if not os.path.isdir(ORIGINAL_DIR):
+    print("test_duplicate_names_consistent")
+    if not has_originals():
         print("  SKIP: extracted/ not present")
         return
     for f in sorted(os.listdir(ENG_DIR)):
         if not f.endswith(".json"):
             continue
-        with open(os.path.join(ENG_DIR, f), encoding="utf-8") as fh:
-            override = json.load(fh)
-        with open(os.path.join(ORIGINAL_DIR, f), encoding="utf-8") as fh:
-            original = json.load(fh)
-        # Group title/name keys by their English value
-        from collections import defaultdict
+        override = load_json(os.path.join(ENG_DIR, f))
+        original = load_json(os.path.join(ORIGINAL_DIR, f))
         groups = defaultdict(list)
         for k, v in original.items():
             if k.endswith(".title") or k.endswith(".name"):
@@ -147,13 +193,19 @@ def test_duplicate_names_all_translated():
                 fail(f"{f}: '{eng_name}' partially translated - "
                      f"done: {translated}, missing: {untranslated}")
 
+
 if __name__ == "__main__":
+    # These always run (including CI)
     test_all_json_valid()
-    test_keys_match_original()
     test_no_sts1_markup()
-    test_placeholders_preserved()
-    test_no_empty_translations()
-    test_duplicate_names_all_translated()
+    test_valid_placeholders()
+    test_valid_color_tags()
+    test_no_empty_values()
+
+    # These need extracted/ (local only)
+    test_keys_match_original()
+    test_placeholders_match_original()
+    test_duplicate_names_consistent()
 
     print(f"\n{'='*50}")
     if failures:

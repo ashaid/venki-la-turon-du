@@ -4,3 +4,4 @@ sts1-extracted/
 gdre_tools/
 gdre_tools.zip
 untranslated.tsv
+__pycache__/
