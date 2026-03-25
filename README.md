@@ -52,13 +52,21 @@ You don't need to know how to code or use git from the command line.
 
 ### Getting started with GitHub
 
-If you've never used GitHub before:
+**If you're a collaborator** (you were invited to the repo):
+
+1. **Clone the repo** — in GitHub Desktop, click "Clone a repository" and search for `ashaid/venki-la-turon-du`.
+2. **Create a branch** — click "Current Branch" at the top and create a new branch (e.g., `translate-cards`). Don't edit `main` directly.
+3. **Edit the files** — open any file in `eng/` with a text editor, translate some strings, and save.
+4. **Commit and push** — in GitHub Desktop, write a short summary of what you translated, click "Commit", then "Push origin".
+5. **Open a pull request** — GitHub Desktop will show a "Create Pull Request" button after you push. Click it, add a description, and submit.
+
+**If you're not a collaborator:**
 
 1. **Fork the project** — click the "Fork" button in the top right of this repo's page. This makes your own copy.
 2. **Edit files in the browser** — navigate to any file in `eng/` (like `cards.json`), click the pencil icon to edit, make your changes, then click "Commit changes" at the bottom.
 3. **Send your changes back** — go to your fork's page, click "Contribute" then "Open pull request". Add a short description of what you translated and submit it.
 
-That's it. You can do everything from the browser without installing anything.
+Either way, tests run automatically when you open a pull request. If something is wrong with the formatting, the check will fail and tell you what to fix.
 
 ### What to translate
 
