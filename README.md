@@ -1,6 +1,6 @@
 # Venki la Turon du
 
-[![Tests](https://github.com/tonyolag/venki-la-turon-du/actions/workflows/tests.yml/badge.svg)](https://github.com/tonyolag/venki-la-turon-du/actions/workflows/tests.yml)
+[![Tests](https://github.com/ashaid/venki-la-turon-du/actions/workflows/tests.yml/badge.svg)](https://github.com/ashaid/venki-la-turon-du/actions/workflows/tests.yml)
 
 Esperanto translation for Slay the Spire 2.
 
@@ -132,4 +132,4 @@ We're overriding the English slot, so the game thinks it's loading English but g
 
 ## Stargazers
 
-[![Star History Chart](https://api.star-history.com/svg?repos=tonyolag/venki-la-turon-du&type=Date)](https://star-history.com/#tonyolag/venki-la-turon-du&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=ashaid/venki-la-turon-du&type=Date)](https://star-history.com/#ashaid/venki-la-turon-du&Date)
