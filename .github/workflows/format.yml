@@ -3,9 +3,8 @@ name: Auto-format
 on:
   push:
     branches: [main]
-    paths: ["eng/**"]
   pull_request:
-    paths: ["eng/**"]
+    branches: [main]
 
 permissions:
   contents: write
