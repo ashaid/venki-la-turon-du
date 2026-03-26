@@ -138,6 +138,6 @@ Slay the Spire 2 checks for a `localization_override/` folder in user data at st
 
 We're overriding the English slot, so the game thinks it's loading English but gets Esperanto instead.
 
-## Stargazers
+## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=ashaid/venki-la-turon-du&type=Date)](https://star-history.com/#ashaid/venki-la-turon-du&Date)
+[![Star History Chart](https://api.star-history.com/image?repos=ashaid/venki-la-turon-du&type=date&legend=top-left)](https://www.star-history.com/?repos=ashaid%2Fvenki-la-turon-du&type=date&legend=top-left)
